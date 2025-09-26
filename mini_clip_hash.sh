@@ -78,24 +78,9 @@ case "$hash_len" in
         ;;
 esac
 
-declare -A length_candidates=(
-    [8]="CRC32 Adler32"
-    [16]="XXHash"
-    [32]="MD5"
-    [40]="SHA1 RIPEMD"
-    [56]="SHA224 SHA3-224"
-    [64]="SHA256 SHA3-256 BLAKE2s BLAKE3"
-    [96]="SHA384 SHA3-384"
-    [128]="SHA512 SHA3-512 BLAKE2b WHIRLPOOL"
-)
 
-candidates=${length_candidates[$hash_len]:-Unknown}
 
 declare -a dialog_lines=()
-dialog_lines+=("Clipboard hash: $clipboard")
-dialog_lines+=("Length: $hash_len characters")
-dialog_lines+=("Possible algorithms (by length): $candidates")
-dialog_lines+=("")
 
 ordered_algorithms=(
     MD5
@@ -120,8 +105,7 @@ ordered_algorithms=(
 
 for target in "$@"; do
     if [[ ! -f "$target" ]]; then
-        dialog_lines+=("$target: not a regular file")
-        dialog_lines+=("")
+        dialog_lines+=("$target: Did not Match")
         continue
     fi
 
@@ -231,8 +215,7 @@ for name in sorted(missing):
 PYBLOCK
     ); then
         base_name=$(basename -- "$target")
-        dialog_lines+=("$base_name: failed to compute hashes")
-        dialog_lines+=("")
+        dialog_lines+=("$base_name: Did not Match")
         continue
     fi
 
@@ -308,23 +291,11 @@ PYBLOCK
 
     base_name=$(basename -- "$target")
     if [[ ${#matches[@]} -gt 0 ]]; then
-        dialog_lines+=("$base_name: matched ${matches[*]}")
+        dialog_lines+=("$base_name: Matched ${matches[*]}")
     else
-        dialog_lines+=("$base_name: no matches found")
+        dialog_lines+=("$base_name: Did not Match")
     fi
 
-    remaining_missing=()
-    for key in "${!missing_map[@]}"; do
-        if [[ $key != ERROR ]]; then
-            remaining_missing+=("$key")
-        fi
-    done
-
-    if [[ ${#remaining_missing[@]} -gt 0 ]]; then
-        dialog_lines+=("  Skipped (not supported locally): ${remaining_missing[*]}")
-    fi
-
-    dialog_lines+=("")
 done
 
 message=$(printf '%s\n' "${dialog_lines[@]}")
