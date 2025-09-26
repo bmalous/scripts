@@ -1,193 +1,302 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-TITLE="Hash Compare"
+SCRIPT_TITLE="Thunar Hash Compare"
 
-dialog() {
-    local msg="$1"
+show_dialog() {
+    local dialog_type="$1"
+    local message="$2"
+
     if command -v zenity >/dev/null 2>&1; then
-        zenity --info --no-markup --no-wrap --title="$TITLE" --text="$msg" || true
+        if [[ "$dialog_type" == "error" ]]; then
+            zenity --error --no-markup --no-wrap --title="$SCRIPT_TITLE" --text="$message" || true
+        else
+            zenity --info --no-markup --no-wrap --title="$SCRIPT_TITLE" --text="$message" || true
+        fi
     else
-        printf '%s\n' "$msg"
+        if [[ "$dialog_type" == "error" ]]; then
+            printf 'Error: %s\n' "$message" >&2
+        else
+            printf '%s\n' "$message"
+        fi
     fi
 }
 
-die() { printf '%s\n' "$1" >&2; exit 1; }
+fail() {
+    show_dialog error "$1"
+    exit 1
+}
 
-clipboard_text() {
-    local data=""
+extract_clipboard() {
+    local content=""
     if [[ -n "${WAYLAND_DISPLAY:-}" ]] && command -v wl-paste >/dev/null 2>&1; then
-        data=$(wl-paste --no-newline 2>/dev/null || true)
+        content=$(wl-paste --no-newline 2>/dev/null || true)
     elif command -v xclip >/dev/null 2>&1; then
-        data=$(xclip -selection clipboard -o 2>/dev/null || true)
+        content=$(xclip -selection clipboard -o 2>/dev/null || true)
     elif command -v xsel >/dev/null 2>&1; then
-        data=$(xsel --clipboard --output 2>/dev/null || true)
+        content=$(xsel --clipboard --output 2>/dev/null || true)
     else
-        die "Clipboard utility not found"
+        fail "No clipboard utility found. Install wl-clipboard (Wayland) or xclip/xsel (X11)."
     fi
-    printf '%s' "$data"
+
+    printf '%s' "$content"
 }
 
-hash_stream() {
-    local algo="$1"
-    python3 - "$algo" <<'PYHASH'
-import binascii, hashlib, sys, zlib
-algo = sys.argv[1]
-chunk = 1024 * 1024
-buf = sys.stdin.buffer
-
-def finish(tag, value=""):
-    print(f"{tag} {algo} {value}")
-    sys.exit(0)
-
-core = {
-    "MD5": "md5", "SHA1": "sha1", "SHA224": "sha224", "SHA256": "sha256",
-    "SHA384": "sha384", "SHA512": "sha512",
-    "SHA3-224": "sha3_224", "SHA3-256": "sha3_256",
-    "SHA3-384": "sha3_384", "SHA3-512": "sha3_512",
-    "BLAKE2b": "blake2b", "BLAKE2s": "blake2s",
-}
-if algo in core:
-    func = getattr(hashlib, core[algo], None)
-    if not func:
-        finish("MISSING")
-    h = func()
-    while True:
-        block = buf.read(chunk)
-        if not block:
-            break
-        h.update(block)
-    finish("COMPUTED", h.hexdigest().lower())
-
-if algo == "WHIRLPOOL":
-    if "whirlpool" in hashlib.algorithms_available:
-        try:
-            h = hashlib.new("whirlpool")
-        except Exception:
-            finish("MISSING")
-        for block in iter(lambda: buf.read(chunk), b""):
-            h.update(block)
-        finish("COMPUTED", h.hexdigest().lower())
-    finish("MISSING")
-
-if algo == "RIPEMD":
-    name = next((n for n in ("ripemd160", "RIPEMD160") if n in hashlib.algorithms_available), None)
-    if not name:
-        finish("MISSING")
-    try:
-        h = hashlib.new(name)
-    except Exception:
-        finish("MISSING")
-    for block in iter(lambda: buf.read(chunk), b""):
-        h.update(block)
-    finish("COMPUTED", h.hexdigest().lower())
-
-if algo == "BLAKE3":
-    try:
-        import blake3
-    except Exception:
-        finish("MISSING")
-    h = blake3.blake3()
-    for block in iter(lambda: buf.read(chunk), b""):
-        h.update(block)
-    finish("COMPUTED", h.hexdigest().lower())
-
-if algo == "XXHash":
-    try:
-        import xxhash
-    except Exception:
-        finish("MISSING")
-    h = xxhash.xxh64()
-    for block in iter(lambda: buf.read(chunk), b""):
-        h.update(block)
-    finish("COMPUTED", h.hexdigest().lower())
-
-if algo == "CRC32":
-    value = 0
-    for block in iter(lambda: buf.read(chunk), b""):
-        value = binascii.crc32(block, value)
-    finish("COMPUTED", f"{value & 0xffffffff:08x}")
-
-if algo == "Adler32":
-    value = 1
-    for block in iter(lambda: buf.read(chunk), b""):
-        value = zlib.adler32(block, value)
-    finish("COMPUTED", f"{value & 0xffffffff:08x}")
-
-finish("MISSING")
-PYHASH
+sanitize_hash() {
+    local raw="$1"
+    local trimmed
+    trimmed=$(printf '%s' "$raw" | tr -d '[:space:]')
+    printf '%s' "$trimmed"
 }
 
-run_parallel() {
-    local target="$1"; shift
-    local tmpdir; tmpdir=$(mktemp -d) || return 1
-    local pipes="" algo
-    for algo in "$@"; do
-        local out="$tmpdir/$algo.out"
-        pipes+=" >(hash_stream $(printf '%q' "$algo") >$(printf '%q' "$out"))"
-    done
-    local cmd="tee${pipes} >/dev/null"
-    if ! eval "$cmd" <"$target"; then
-        rm -rf "$tmpdir"
-        return 1
-    fi
-    local output=""
-    for algo in "$@"; do
-        local out="$tmpdir/$algo.out"
-        [[ -f "$out" ]] && output+=$(<"$out")$'\n'
-    done
-    rm -rf "$tmpdir"
-    printf '%s' "$output"
-}
+if [[ $# -lt 1 ]]; then
+    fail "No files provided."
+fi
 
-[[ $# -gt 0 ]] || die "No files provided"
-command -v python3 >/dev/null 2>&1 || die "python3 required"
+if ! command -v python3 >/dev/null 2>&1; then
+    fail "python3 is required but not found in PATH."
+fi
 
-clipboard=$(clipboard_text | tr -d '[:space:]')
-[[ -n "$clipboard" ]] || die "Clipboard empty"
-[[ "$clipboard" =~ ^[[:xdigit:]]+$ ]] || die "Clipboard not hex"
+clipboard_raw=$(extract_clipboard)
+clipboard=$(sanitize_hash "$clipboard_raw")
+
+if [[ -z "$clipboard" ]]; then
+    fail "Clipboard does not contain any text."
+fi
+
+if [[ ! "$clipboard" =~ ^[[:xdigit:]]+$ ]]; then
+    fail "Clipboard content is not a hexadecimal hash."
+fi
 
 clipboard_lower=${clipboard,,}
-case ${#clipboard} in
-    8)   algos=(CRC32 Adler32) ;;
-    16)  algos=(XXHash) ;;
-    32)  algos=(MD5) ;;
-    40)  algos=(SHA1 RIPEMD) ;;
-    56)  algos=(SHA224 SHA3-224) ;;
-    64)  algos=(SHA256 SHA3-256 BLAKE2s BLAKE3) ;;
-    96)  algos=(SHA384 SHA3-384) ;;
-    128) algos=(SHA512 SHA3-512 BLAKE2b WHIRLPOOL) ;;
-    *)   die "Unsupported hash length ${#clipboard}" ;;
+hash_len=${#clipboard}
+case "$hash_len" in
+    8|16|32|40|56|64|96|128)
+        ;;
+    *)
+        fail "Clipboard hash length ($hash_len) is not supported."
+        ;;
 esac
 
-results=()
-for path in "$@"; do
-    if [[ ! -f "$path" ]]; then
-        results+=("$path: Did Not Match")
+
+
+declare -a dialog_lines=()
+
+ordered_algorithms=(
+    MD5
+    SHA1
+    SHA224
+    SHA256
+    SHA384
+    SHA512
+    SHA3-224
+    SHA3-256
+    SHA3-384
+    SHA3-512
+    BLAKE2b
+    BLAKE2s
+    BLAKE3
+    WHIRLPOOL
+    RIPEMD
+    XXHash
+    CRC32
+    Adler32
+)
+
+for target in "$@"; do
+    if [[ ! -f "$target" ]]; then
+        dialog_lines+=("$target: Did not Match")
         continue
     fi
-    if ! output=$(run_parallel "$path" "${algos[@]}"); then
-        results+=("$(basename -- "$path"): Did Not Match")
+
+    if ! python_output=$(python3 - "$target" <<'PYBLOCK'
+import binascii
+import hashlib
+import sys
+import zlib
+from pathlib import Path
+
+path = Path(sys.argv[1])
+if not path.exists():
+    print(f"ERROR not-found {path}")
+    sys.exit(1)
+if not path.is_file():
+    print(f"ERROR not-file {path}")
+    sys.exit(1)
+
+hashlib_funcs = [
+    ("MD5", "md5"),
+    ("SHA1", "sha1"),
+    ("SHA224", "sha224"),
+    ("SHA256", "sha256"),
+    ("SHA384", "sha384"),
+    ("SHA512", "sha512"),
+    ("SHA3-224", "sha3_224"),
+    ("SHA3-256", "sha3_256"),
+    ("SHA3-384", "sha3_384"),
+    ("SHA3-512", "sha3_512"),
+    ("BLAKE2b", "blake2b"),
+    ("BLAKE2s", "blake2s"),
+]
+
+hashers = []
+missing = set()
+
+for name, attr in hashlib_funcs:
+    func = getattr(hashlib, attr, None)
+    if func is None:
+        missing.add(name)
+        continue
+    hashers.append((name, func()))
+
+if "whirlpool" in hashlib.algorithms_available:
+    try:
+        hashers.append(("WHIRLPOOL", hashlib.new("whirlpool")))
+    except Exception:
+        missing.add("WHIRLPOOL")
+else:
+    missing.add("WHIRLPOOL")
+
+if "ripemd160" in hashlib.algorithms_available:
+    try:
+        hashers.append(("RIPEMD", hashlib.new("ripemd160")))
+    except Exception:
+        missing.add("RIPEMD")
+else:
+    missing.add("RIPEMD")
+
+try:
+    import blake3
+except Exception:
+    missing.add("BLAKE3")
+else:
+    hashers.append(("BLAKE3", blake3.blake3()))
+
+try:
+    import xxhash
+except Exception:
+    missing.add("XXHash")
+else:
+    hashers.append(("XXHash", xxhash.xxh64()))
+
+crc32_value = 0
+adler32_value = 1
+chunk_size = 1024 * 1024
+try:
+    with path.open('rb') as handle:
+        while True:
+            chunk = handle.read(chunk_size)
+            if not chunk:
+                break
+            for _, hasher in hashers:
+                hasher.update(chunk)
+            crc32_value = binascii.crc32(chunk, crc32_value)
+            adler32_value = zlib.adler32(chunk, adler32_value)
+except Exception as exc:
+    print(f"ERROR read-failed {exc}")
+    sys.exit(1)
+
+computed = {}
+for name, hasher in hashers:
+    try:
+        computed[name] = hasher.hexdigest().lower()
+    except Exception:
+        missing.add(name)
+
+computed["CRC32"] = f"{crc32_value & 0xffffffff:08x}"
+computed["Adler32"] = f"{adler32_value & 0xffffffff:08x}"
+
+for name in sorted(computed):
+    print(f"COMPUTED {name} {computed[name]}")
+
+for name in sorted(missing):
+    if name not in computed:
+        print(f"MISSING {name}")
+PYBLOCK
+    ); then
+        base_name=$(basename -- "$target")
+        dialog_lines+=("$base_name: Did not Match")
         continue
     fi
-    declare -A hashes=()
+
+    unset computed_hashes
+    declare -A computed_hashes=()
+    unset missing_map
+    declare -A missing_map=()
+
     while IFS= read -r line; do
         [[ -z "$line" ]] && continue
         if [[ $line == COMPUTED* ]]; then
             read -r _ algo digest <<<"$line"
-            hashes[$algo]=$digest
+            computed_hashes["$algo"]="$digest"
+        elif [[ $line == MISSING* ]]; then
+            read -r _ algo <<<"$line"
+            missing_map["$algo"]=1
+        elif [[ $line == ERROR* ]]; then
+            missing_map["ERROR"]=1
         fi
-    done <<<"$output"
-    matches=()
-    for algo in "${algos[@]}"; do
-        [[ ${hashes[$algo]:-} == "$clipboard_lower" ]] && matches+=("$algo")
-    done
-    if [[ ${#matches[@]} -gt 0 ]]; then
-        results+=("$(basename -- "$path"): Matched ${matches[*]}")
-    else
-        results+=("$(basename -- "$path"): Did Not Match")
+    done <<<"$python_output"
+
+    if [[ -n "${missing_map[BLAKE3]:-}" ]] && command -v b3sum >/dev/null 2>&1; then
+        if output=$(b3sum -- "$target" 2>/dev/null); then
+            digest=$(printf '%s' "$output" | awk '{print $1}')
+            digest=${digest,,}
+            if [[ $digest =~ ^[0-9a-f]+$ ]]; then
+                computed_hashes["BLAKE3"]="$digest"
+                unset 'missing_map[BLAKE3]'
+            fi
+        fi
     fi
-    unset hashes
+
+    if [[ -n "${missing_map[WHIRLPOOL]:-}" ]] && command -v openssl >/dev/null 2>&1; then
+        if output=$(openssl dgst -whirlpool -- "$target" 2>/dev/null); then
+            digest=$(printf '%s' "$output" | awk '{print $NF}')
+            digest=${digest,,}
+            if [[ $digest =~ ^[0-9a-f]+$ ]]; then
+                computed_hashes["WHIRLPOOL"]="$digest"
+                unset 'missing_map[WHIRLPOOL]'
+            fi
+        fi
+    fi
+
+    if [[ -n "${missing_map[RIPEMD]:-}" ]] && command -v openssl >/dev/null 2>&1; then
+        if output=$(openssl dgst -ripemd160 -- "$target" 2>/dev/null); then
+            digest=$(printf '%s' "$output" | awk '{print $NF}')
+            digest=${digest,,}
+            if [[ $digest =~ ^[0-9a-f]+$ ]]; then
+                computed_hashes["RIPEMD"]="$digest"
+                unset 'missing_map[RIPEMD]'
+            fi
+        fi
+    fi
+
+    if [[ -n "${missing_map[XXHash]:-}" ]] && command -v xxhsum >/dev/null 2>&1; then
+        if output=$(xxhsum -- "$target" 2>/dev/null); then
+            digest=$(printf '%s' "$output" | tr '[:upper:]' '[:lower:]' | grep -Eo '[0-9a-f]{8,}' | head -n1)
+            if [[ $digest =~ ^[0-9a-f]+$ ]]; then
+                computed_hashes["XXHash"]="$digest"
+                unset 'missing_map[XXHash]'
+            fi
+        fi
+    fi
+
+    matches=()
+    for algo in "${ordered_algorithms[@]}"; do
+        if [[ -n "${computed_hashes[$algo]:-}" ]]; then
+            if [[ "${computed_hashes[$algo]}" == "$clipboard_lower" ]]; then
+                matches+=("$algo")
+            fi
+        fi
+    done
+
+    base_name=$(basename -- "$target")
+    if [[ ${#matches[@]} -gt 0 ]]; then
+        dialog_lines+=("$base_name: Matched ${matches[*]}")
+    else
+        dialog_lines+=("$base_name: Did not Match")
+    fi
+
 done
 
-dialog "$(printf '%s\n' "${results[@]}")"
+message=$(printf '%s\n' "${dialog_lines[@]}")
+show_dialog info "$message"
