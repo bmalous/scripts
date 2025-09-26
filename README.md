@@ -13,7 +13,7 @@ Or save to your personal bin directory
    
   mkdir -p ~/.local/bin
 
-  cp hash_compare.sh ~/.local/bin/mini_clip_hash
+  cp mini_clip_hash.sh ~/.local/bin/mini_clip_hash
 
   chmod +x ~/.local/bin/mini_clip_hash
 
