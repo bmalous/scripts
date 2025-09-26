@@ -1,94 +1,56 @@
-Script compares hashs from clipboard against file hash for MD5, SHA1, SHA224, SHA256, SHA384, SHA512, SHA3-224, SHA3-256, SHA3-384, SHA3-512, BLAKE2b, BLAKE2s, BLAKE3, WHIRLPOOL, RIPEMD, XXHash, CRC32, and Adler32 with Zenity dialogs
+Script compares hash from clipboard against file hash for MD5, SHA1, SHA224, SHA256, SHA384, SHA512, SHA3-224, SHA3-256, SHA3-384, SHA3-512, BLAKE2b, BLAKE2s, BLAKE3, WHIRLPOOL, RIPEMD, XXHash, CRC32, and Adler32 with Zenity dialogs
 
-# Here's how to set up this hash comparison script as a Thunar custom action:
+What the Script Does
+The script compares hash values from your clipboard against files you select in Thunar.
 
-# Step 1: Install the Script
-First, save the script and make it executable:
+It extracts a hash from your clipboard (supports both Wayland and X11)
+Calculates multiple hash types for selected files using various algorithms:
 
-  sudo cp mini_clip_hash.sh /usr/local/bin/mini_clip_hash
-  
-  sudo chmod +x /usr/local/bin/mini_clip_hash
+Common hashes: MD5, SHA1, SHA256, SHA512, etc.
+Advanced hashes: BLAKE2b/s, BLAKE3, SHA3 variants
+Legacy hashes: CRC32, Adler32, WHIRLPOOL, RIPEMD160
+Fast hashes: XXHash
 
-Or save to your personal bin directory
-   
-  mkdir -p ~/.local/bin
 
-  cp mini_clip_hash.sh ~/.local/bin/mini_clip_hash
+Compares and reports matches via GUI dialog or terminal output
+Shows results indicating which files match the clipboard hash and which algorithm was used
 
-  chmod +x ~/.local/bin/mini_clip_hash
+How to Set Up in Thunar Custom Actions
 
-# Step 2: Create Thunar Custom Action
-1.	Open Thunar and go to Edit → Configure custom actions (or press Ctrl+Shift+C)
-2.	Click the "+" button to create a new custom action
-3.	Fill in the Basic tab: 
-  Name: Compare Hash with Clipboard
-  Description: Compare file hash against clipboard hash
-  Command: /usr/local/bin/mini_clip_hash %F
-  Use ~/.local/bin/mini_clip_hash %F if you installed it locally
-4.  Icon: Choose an appropriate icon (optional)
-5.	Configure the Appearance Conditions tab:
+Open Thunar and go to Edit → Configure custom actions
+Click "+" to add a new action with these settings:
+Basic tab:
 
-  File Pattern: * (to match all files)
-  
-  Appears if selection contains: Select "Regular Files"
-  
-  Other File Types: Uncheck all boxes
-  
-  Directories: Uncheck
-  
-  Audio Files, Image Files, etc.: Check the types you want or leave all checked
-  
-# Step 3: Test the Setup
-1.	Copy a hash to clipboard (e.g., from a website or terminal)
-2.	Right-click on a file in Thunar
-3.	Select "Compare Hash with Clipboard" from the context menu
-4.	View the result in the Zenity dialog
-   
-Alternative Command Variations
-If you want multiple hash comparison options, you can create several custom actions:
+Name: Hash Compare
+Description: Compare file hashes with clipboard content
+Command: /path/to/your/script.sh %F
 
-For multiple files:
+Replace /path/to/your/script.sh with the actual path to your saved script
+%F passes all selected files to the script
 
-  Command: /usr/local/bin/mini_clip_hash %F
-  
-  Description: Compare multiple files with clipboard hash
-  
-For single file with terminal output:
 
-  Command: gnome-terminal -e "/usr/local/bin/mini_clip_hash '%f'"
-  
-  Description: Compare hash in terminal
-  
-# Troubleshooting
 
-If the custom action doesn't appear:
+Appearance Conditions tab:
 
-  Ensure the script has execute permissions
-  
-  Check that the path in the command is correct
-  
-  Verify Thunar is restarted after creating the action
-  
-If you get "command not found":
+Check "Appears if selection contains:" → "Other Files"
+This makes the action available when you select files
 
-  Use the full path to the script
-  
-  Make sure ~/.local/bin is in your PATH if using that location
 
-# Make sure you have the required tools
+Save the action
 
-Dependencies check:
+How to Use
 
-which zenity xsel xclip md5sum sha256sum
+Copy a hash value to your clipboard (from a website, terminal, etc.)
+Select one or more files in Thunar that you want to verify
+Right-click and choose "Hash Compare" from the context menu
+View the results in a popup dialog showing which files matched and which hash algorithm was detected
 
-Usage Workflow
+Requirements
+The script needs:
 
-1.	Find a file's expected hash (from a website, README, etc.)
-   
-2.	Copy that hash to your clipboard
-   
-3.	Right-click the downloaded file in Thunar
-   
-4.	Select "Compare Hash with Clipboard"
-8.	Get instant verification via the popup dialog
-This creates a seamless file integrity verification workflow directly from your file manager!
+python3 (required)
+A clipboard utility: wl-paste (Wayland) or xclip/xsel (X11)
+zenity for GUI dialogs (optional - falls back to terminal output)
+Optional tools for additional hash types: b3sum, openssl, xxhsum
+
+This is particularly useful for verifying downloaded files against published checksums - just copy the checksum, select the file(s), and run the action to instantly verify integrity.
