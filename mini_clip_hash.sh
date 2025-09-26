@@ -563,7 +563,7 @@ compute_multiple_hashes() {
         IFS='|' read -r label algo <<< "$algo_desc"
         local hash
         if hash=$(compute_file_hash "$algo" "$label" "$file" "$quiet"); then
-            results+="$label: $hash\n"
+            results+="$label: $hash"$'\n'
         fi
     done
     
@@ -612,7 +612,12 @@ run_copy_mode() {
             else
                 formatted_size="Unknown"
             fi
-            notify info "Multiple hashes copied to clipboard!\n\nFile: $(basename "$file")\nSize: $formatted_size\n\n$results"
+            notify info "Multiple hashes copied to clipboard!
+
+File: $(basename "$file")
+Size: $formatted_size
+
+$results"
         else
             notify error "Failed to copy hashes to clipboard"
             exit 1
@@ -645,7 +650,11 @@ run_copy_mode() {
         else
             formatted_size="Unknown"
         fi
-        notify info "$label hash copied to clipboard!\n\nFile: $(basename "$file")\nSize: $formatted_size\nHash: $file_hash"
+        notify info "$label hash copied to clipboard!
+
+File: $(basename "$file")
+Size: $formatted_size
+Hash: $file_hash"
     else
         notify error "Failed to copy hash to clipboard"
         exit 1
@@ -774,8 +783,9 @@ main() {
     descriptor=$(determine_hash_algorithm "$clipboard_hash" "$force_algo")
     IFS='|' read -r label algo <<< "$descriptor"
 
-    results="Hash Comparison Results - $(date)\n"
-    results+="Comparing against $label hash:\n$clipboard_hash\n\n"
+    results="Hash Comparison Results - $(date)"$'\n'
+    results+="Comparing against $label hash:"$'\n'
+    results+="$clipboard_hash"$'\n'$'\n'
     status=0
 
     local file total_files=${#files[@]} current_file=0
@@ -784,17 +794,17 @@ main() {
         
         case $(validate_file_readable "$file"; echo $?) in
             1)
-                results+="❌ Missing: $(basename "$file")\n"
+                results+="❌ Missing: $(basename "$file")"$'\n'
                 status=1
                 continue
                 ;;
             2)
-                results+="❌ Not a file: $(basename "$file")\n"
+                results+="❌ Not a file: $(basename "$file")"$'\n'
                 status=1
                 continue
                 ;;
             3)
-                results+="❌ Permission denied: $(basename "$file")\n"
+                results+="❌ Permission denied: $(basename "$file")"$'\n'
                 status=1
                 continue
                 ;;
@@ -803,20 +813,20 @@ main() {
         local file_hash
         if ! file_hash=$(compute_file_hash "$algo" "$label" "$file" "$quiet_mode"); then
             if [[ $algo == sha3sum* ]] || [[ $algo == b2sum* ]] || [[ $algo == b3sum* ]] || [[ $algo == whirlpoolsum* ]]; then
-                results+="❌ Missing tool: ${algo%% *} needed for $(basename "$file")\n"
+                results+="❌ Missing tool: ${algo%% *} needed for $(basename "$file")"$'\n'
             else
-                results+="❌ Hash failed: $(basename "$file")\n"
+                results+="❌ Hash failed: $(basename "$file")"$'\n'
             fi
             status=1
             continue
         fi
 
         if [[ $file_hash == "$clipboard_hash" ]]; then
-            results+="✅ Match: $(basename "$file")\n"
+            results+="✅ Match: $(basename "$file")"$'\n'
         else
-            results+="❌ Mismatch: $(basename "$file")\n"
-            results+="   Expected: $clipboard_hash\n"
-            results+="   Actual:   $file_hash\n\n"
+            results+="❌ Mismatch: $(basename "$file")"$'\n'
+            results+="   Expected: $clipboard_hash"$'\n'
+            results+="   Actual:   $file_hash"$'\n'$'\n'
             status=1
         fi
     done
@@ -833,6 +843,8 @@ main() {
     else
         notify info "$results"
     fi
+
+    exit $status
 }
 
 main "$@"
