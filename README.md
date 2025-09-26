@@ -1,4 +1,6 @@
-Here's how to set up this hash comparison script as a Thunar custom action:
+Script compares hashs from clipboard against file hash for MD5, SHA1, SHA224, SHA256, SHA384, SHA512, SHA3-224, SHA3-256, SHA3-384, SHA3-512, BLAKE2b, BLAKE2s, BLAKE3, WHIRLPOOL, RIPEMD, XXHash, CRC32, and Adler32 with Zenity dialogs
+
+# Here's how to set up this hash comparison script as a Thunar custom action:
 
 # Step 1: Install the Script
 First, save the script and make it executable:
